@@ -1,7 +1,8 @@
 "use-client";
 
-import React, { useState } from "react";
-import { AlertCircle, AlertTriangle, CheckCircle, Info, Sparkles, Plus, RefreshCw, Trash2 } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
+import { AlertCircle, AlertTriangle, CheckCircle, Info, Sparkles, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
 export interface SmartAlert {
@@ -28,12 +29,17 @@ export default function RadarAlerts({
   onGenerateAiAlerts,
   aiLoading,
 }: RadarAlertsProps) {
+  const [mounted, setMounted] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newDesc, setNewDesc] = useState("");
   const [newType, setNewType] = useState<SmartAlert["type"]>("warning");
   const [newCategory, setNewCategory] = useState("Assinaturas");
   const [newSavings, setNewSavings] = useState("");
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -178,17 +184,32 @@ export default function RadarAlerts({
         )}
       </div>
 
-      {/* Manual "+ Novo Alerta" Modal overlay */}
-      <AnimatePresence>
-        {showAddModal && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+      {/* Manual "+ Novo Alerta" Modal overlay via Portal */}
+      {mounted && showAddModal && typeof document !== "undefined" && createPortal(
+        <AnimatePresence>
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-md glass-card rounded-xl p-6 border border-white/10"
+              className="w-full max-w-md bg-[#0e1626] border border-cyan-500/30 rounded-2xl p-6 shadow-2xl relative my-auto max-h-[90vh] overflow-y-auto"
             >
-              <h3 className="text-lg font-display font-bold text-white mb-4">Inocular Novo Alerta no Radar</h3>
+              <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/5">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-[#00C8FF]/10 border border-[#00C8FF]/20 flex items-center justify-center">
+                    <AlertTriangle className="w-4 h-4 text-[#00C8FF]" />
+                  </div>
+                  <h3 className="text-base font-display font-black text-white">Novo Alerta no Radar</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-white/5 transition cursor-pointer"
+                  title="Fechar"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
 
               <form onSubmit={handleSubmit} className="space-y-4 text-left">
                 <div>
@@ -256,17 +277,17 @@ export default function RadarAlerts({
                   />
                 </div>
 
-                <div className="flex justify-end gap-3 pt-2">
+                <div className="flex justify-end gap-3 pt-3 border-t border-white/5">
                   <button
                     type="button"
                     onClick={() => setShowAddModal(false)}
-                    className="px-4 py-2 bg-white/5 text-white hover:bg-white/10 rounded-lg text-xs"
+                    className="px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded-xl text-xs font-bold transition cursor-pointer"
                   >
                     Cancelar
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-[#00C8FF] text-black font-extrabold rounded-lg text-xs hover:bg-[#00BFFF]"
+                    className="px-4 py-2 bg-gradient-to-r from-[#00C8FF] to-[#00BFFF] hover:brightness-110 text-slate-950 font-black rounded-xl text-xs transition cursor-pointer shadow-md shadow-[#00C8FF]/20"
                   >
                     Salvar Alerta
                   </button>
@@ -274,8 +295,9 @@ export default function RadarAlerts({
               </form>
             </motion.div>
           </div>
-        )}
-      </AnimatePresence>
+        </AnimatePresence>,
+        document.body
+      )}
     </div>
   );
 }
