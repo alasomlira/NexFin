@@ -237,7 +237,7 @@ export default function AddForms({ type, onClose, onSave, initialData }: AddForm
                     required
                     maxLength={4}
                     value={cardLastFour}
-                    onChange={(e) => setCardLastFour(e.target.value.replace(/\D/g, ""))}
+                    onChange={(e) => setCardLastFour(e.target.value.replace(/\D/g, "").slice(0, 4))}
                     placeholder="Ex: 8899"
                     className="w-full bg-[#0d121f] rounded-lg px-3 py-2 text-sm border border-white/5 focus:border-[#00C8FF] focus:outline-none text-white font-mono"
                   />
@@ -251,7 +251,7 @@ export default function AddForms({ type, onClose, onSave, initialData }: AddForm
                     maxLength={5}
                     value={cardExpiry}
                     onChange={(e) => {
-                      let val = e.target.value;
+                      let val = e.target.value.replace(/[^\d/]/g, "").slice(0, 5);
                       if (val.length === 2 && !val.includes("/")) val += "/";
                       setCardExpiry(val);
                     }}
@@ -259,6 +259,11 @@ export default function AddForms({ type, onClose, onSave, initialData }: AddForm
                     className="w-full bg-[#0d121f] rounded-lg px-3 py-2 text-sm border border-white/5 focus:border-[#00C8FF] focus:outline-none text-white font-mono"
                   />
                 </div>
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-cyan-950/40 border border-cyan-500/20 text-[11px] text-cyan-200/80 flex items-start gap-2">
+                <span className="text-sm">🛡️</span>
+                <span><strong>Conformidade e Segurança:</strong> O NexFin salva exclusivamente os 4 últimos dígitos para identificação da fatura. Nunca informe o número completo do cartão ou código de segurança (CVV).</span>
               </div>
             </>
           )}

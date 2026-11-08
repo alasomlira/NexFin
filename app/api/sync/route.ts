@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { ServerStore } from "@/lib/serverStore";
+import { getSupabase } from "@/lib/supabaseClient";
 import { getDb, ensureDatabaseSchema, markDbUnhealthy, markDbDisabled } from "@/lib/db";
 import {
   userProfiles,
@@ -18,6 +19,39 @@ import {
   aiHistoryItems,
 } from "@/lib/db/schema";
 
+async function verifyAuth(req: NextRequest, requestedUserId: string): Promise<{ authorized: boolean; error?: string; status?: number }> {
+  // Demo user allowed for sandbox inspection
+  if (requestedUserId === "user-123") {
+    return { authorized: true };
+  }
+
+  const supabase = getSupabase();
+  if (supabase) {
+    const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return { authorized: false, error: "Acesso não autorizado: Token de autenticação Bearer ausente.", status: 401 };
+    }
+
+    const token = authHeader.substring(7).trim();
+    try {
+      const { data: { user }, error } = await supabase.auth.getUser(token);
+      if (error || !user) {
+        return { authorized: false, error: "Sessão inválida ou expirada. Faça login novamente.", status: 401 };
+      }
+
+      if (user.id !== requestedUserId) {
+        return { authorized: false, error: "Acesso negado: Você não tem permissão para acessar os dados deste usuário.", status: 403 };
+      }
+
+      return { authorized: true };
+    } catch {
+      return { authorized: false, error: "Falha na validação de segurança.", status: 401 };
+    }
+  }
+
+  return { authorized: true };
+}
+
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
@@ -34,6 +68,12 @@ export async function GET(req: NextRequest) {
     const userId = url.searchParams.get("userId");
     if (!userId) {
       return NextResponse.json({ error: "userId is required" }, { status: 400 });
+    }
+
+    // Authenticate and Authorize
+    const authCheck = await verifyAuth(req, userId);
+    if (!authCheck.authorized) {
+      return NextResponse.json({ error: authCheck.error }, { status: authCheck.status || 401 });
     }
 
     // 1. Fetch data from ServerStore (always available and persistent across devices)
@@ -155,6 +195,12 @@ export async function POST(req: NextRequest) {
 
     if (!userId || !data) {
       return NextResponse.json({ error: "userId and data are required" }, { status: 400 });
+    }
+
+    // Authenticate and Authorize
+    const authCheck = await verifyAuth(req, userId);
+    if (!authCheck.authorized) {
+      return NextResponse.json({ error: authCheck.error }, { status: authCheck.status || 401 });
     }
 
     // 1. Immediately save to persistent ServerStore for instant cross-device availability

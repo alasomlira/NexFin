@@ -1,3 +1,5 @@
+import { getSupabase } from "./supabaseClient";
+
 export interface UserProfile {
   id: string;
   name: string;
@@ -301,6 +303,21 @@ export class NexFinDatabase {
     }
   }
 
+  static async getAuthHeader(): Promise<Record<string, string>> {
+    const headers: Record<string, string> = {};
+    if (typeof window === "undefined") return headers;
+    try {
+      const supabase = getSupabase();
+      if (supabase) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          headers["Authorization"] = `Bearer ${session.access_token}`;
+        }
+      }
+    } catch {}
+    return headers;
+  }
+
   static async pushSync(userId: string): Promise<any> {
     if (typeof window === "undefined" || !userId) return { success: false };
     try {
@@ -324,9 +341,10 @@ export class NexFinDatabase {
         checklists: this.getStored<Checklist[]>("checklists", []).filter(c => c.userId === userId),
       };
 
+      const authHeaders = await this.getAuthHeader();
       const response = await fetch("/api/sync", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({ userId, data }),
       });
       return await response.json();
@@ -339,7 +357,10 @@ export class NexFinDatabase {
   static async pullSync(userId: string): Promise<any> {
     if (typeof window === "undefined" || !userId) return { success: false };
     try {
-      const response = await fetch(`/api/sync?userId=${encodeURIComponent(userId)}`);
+      const authHeaders = await this.getAuthHeader();
+      const response = await fetch(`/api/sync?userId=${encodeURIComponent(userId)}`, {
+        headers: { ...authHeaders },
+      });
       const res = await response.json();
       
       if (res.success && res.synchronized && res.data) {
