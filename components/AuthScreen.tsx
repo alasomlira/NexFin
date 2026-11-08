@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { NexFinDatabase } from "@/lib/database";
+import { getSupabase } from "@/lib/supabaseClient";
 
 interface AuthScreenProps {
   onAuthSuccess: (userId: string, email: string, name: string) => void;
@@ -55,20 +56,38 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
   // 6-digit code inputs ref
   const codeInputsRef = useRef<(HTMLInputElement | null)[]>([]);
 
-  // Check active session on mount
+  // Check active session on mount (Supabase first, then local fallback)
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const activeSession = localStorage.getItem("nexfin_active_user");
-      if (activeSession) {
-        try {
-          const user = JSON.parse(activeSession);
-          if (user?.id && user?.email) {
-            onAuthSuccess(user.id, user.email, user.name || "Eduardo Rocha");
+      const checkSession = async () => {
+        const supabase = getSupabase();
+        if (supabase) {
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.user) {
+              const u = session.user;
+              const name = u.user_metadata?.name || u.email?.split("@")[0] || "Usuário";
+              onAuthSuccess(u.id, u.email || "", name);
+              return;
+            }
+          } catch (e) {
+            console.warn("Supabase session check warning:", e);
           }
-        } catch {
-          localStorage.removeItem("nexfin_active_user");
         }
-      }
+
+        const activeSession = localStorage.getItem("nexfin_active_user");
+        if (activeSession) {
+          try {
+            const user = JSON.parse(activeSession);
+            if (user?.id && user?.email) {
+              onAuthSuccess(user.id, user.email, user.name || "Eduardo Rocha");
+            }
+          } catch {
+            localStorage.removeItem("nexfin_active_user");
+          }
+        }
+      };
+      checkSession();
     }
   }, [onAuthSuccess]);
 
@@ -182,6 +201,56 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
         localStorage.setItem("nexfin_remembered_email", cleanEmail);
       } else {
         localStorage.removeItem("nexfin_remembered_email");
+      }
+
+      // 1. Prioritize Supabase Authentication
+      const supabase = getSupabase();
+      if (supabase && cleanEmail !== "edu.rocha785@gmail.com") {
+        try {
+          const { data, error: sbError } = await supabase.auth.signInWithPassword({
+            email: cleanEmail,
+            password: cleanPass,
+          });
+
+          if (data?.user) {
+            const u = data.user;
+            const userName = u.user_metadata?.name || cleanEmail.split("@")[0] || "Usuário";
+            const userData = {
+              id: u.id,
+              name: userName,
+              email: u.email || cleanEmail,
+              cpf: u.user_metadata?.cpf || "",
+              avatar: `https://picsum.photos/seed/${userName.split(" ")[0].toLowerCase()}/150/150`,
+              theme: "dark" as const,
+              language: "pt" as const,
+              preferences: {
+                notificationsEnabled: true,
+                aiGrounding: true,
+                realtimeSync: true,
+              }
+            };
+            localStorage.setItem("nexfin_active_user", JSON.stringify(userData));
+            setSuccess("Acesso autorizado pelo Supabase!");
+            setTimeout(() => {
+              onAuthSuccess(u.id, u.email || cleanEmail, userName);
+            }, 400);
+            return;
+          }
+
+          if (sbError) {
+            let msg = sbError.message;
+            if (msg.includes("Invalid login credentials")) {
+              msg = "E-mail ou senha incorretos no Supabase.";
+            } else if (msg.includes("Email not confirmed")) {
+              msg = "E-mail ainda não confirmado. Verifique a caixa de entrada do seu e-mail.";
+            }
+            setError(msg);
+            setLoading(false);
+            return;
+          }
+        } catch (sbErr: any) {
+          console.warn("Supabase auth attempt failed, trying fallback:", sbErr);
+        }
       }
 
       let loginSuccessful = false;
@@ -365,6 +434,74 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
 
     setLoading(true);
     try {
+      // 1. Prioritize Supabase User Registration
+      const supabase = getSupabase();
+      if (supabase) {
+        try {
+          const { data, error: sbError } = await supabase.auth.signUp({
+            email: cleanEmail,
+            password: cleanPass,
+            options: {
+              data: {
+                name: name.trim(),
+                cpf: cpf.trim(),
+              }
+            }
+          });
+
+          if (sbError) {
+            let msg = sbError.message;
+            if (msg.includes("User already registered")) {
+              msg = "Este e-mail já está cadastrado no Supabase. Faça login ou recupere sua senha.";
+            }
+            setError(msg);
+            setLoading(false);
+            return;
+          }
+
+          if (data?.user) {
+            const u = data.user;
+            const userName = name.trim() || cleanEmail.split("@")[0];
+            const activeUser = {
+              id: u.id,
+              name: userName,
+              email: cleanEmail,
+              cpf: cpf.trim(),
+              avatar: `https://picsum.photos/seed/${userName.split(" ")[0].toLowerCase()}/150/150`,
+              theme: "dark" as const,
+              language: "pt" as const,
+              preferences: {
+                notificationsEnabled: true,
+                aiGrounding: true,
+                realtimeSync: true,
+              }
+            };
+
+            NexFinDatabase.updateProfile(u.id, activeUser);
+            NexFinDatabase.ensureUserSeeded(u.id);
+            localStorage.setItem("nexfin_active_user", JSON.stringify(activeUser));
+            localStorage.setItem("nexfin_remembered_email", cleanEmail);
+
+            if (data.session) {
+              setSuccess("Conta criada no Supabase com sucesso! Acesso liberado.");
+              setTimeout(() => {
+                onAuthSuccess(u.id, cleanEmail, userName);
+              }, 500);
+              return;
+            } else {
+              setSuccess("Conta criada no Supabase! Verifique sua caixa de entrada se a confirmação estiver ativada, ou acesse com login.");
+              setTimeout(() => {
+                setMode("login");
+                setSuccess("");
+              }, 2500);
+              return;
+            }
+          }
+        } catch (sbErr: any) {
+          console.warn("Supabase signup error, attempting fallback:", sbErr);
+        }
+      }
+
       const userId = "usr-" + Math.random().toString(36).substring(2, 9);
       
       const activeUser = {
@@ -460,6 +597,20 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
     setResetEmail(cleanEmail);
     setLoading(true);
     try {
+      const supabase = getSupabase();
+      if (supabase) {
+        try {
+          const { error: sbError } = await supabase.auth.resetPasswordForEmail(cleanEmail);
+          if (!sbError) {
+            setSuccess(`E-mail de recuperação enviado com sucesso pelo Supabase para ${cleanEmail}! Verifique sua caixa de entrada.`);
+            setLoading(false);
+            return;
+          }
+        } catch (sbErr) {
+          console.warn("Supabase reset password fallback to local:", sbErr);
+        }
+      }
+
       const response = await fetch("/api/auth/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

@@ -12,6 +12,7 @@ import {
   NexFinDatabase, UserProfile, Transaction, Goal, Budget, Investment, 
   Notification, CalendarEvent, Card, Installment, FinancialScore, AIHistoryItem, FinancialReport 
 } from "@/lib/database";
+import { getSupabase } from "@/lib/supabaseClient";
 import AuthScreen from "@/components/AuthScreen";
 import Onboarding from "@/components/Onboarding";
 import ScoreCard from "@/components/ScoreCard";
@@ -465,7 +466,15 @@ export default function HomeDashboard() {
     setCurrentUser({ id: userId, email, name });
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      const supabase = getSupabase();
+      if (supabase) {
+        await supabase.auth.signOut();
+      }
+    } catch (err) {
+      console.warn("Supabase sign out error:", err);
+    }
     localStorage.removeItem("nexfin_active_user");
     setCurrentUser(null);
   };
